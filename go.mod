@@ -1,4 +1,4 @@
-module github.com/cert-manager/webhook-example
+module github.com/cert-manager/webhook-freedns
 
 go 1.17
 
