@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 
 	extapi "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
@@ -93,6 +95,14 @@ func (c *customDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 
 	// TODO: do something more useful with the decoded configuration
 	fmt.Printf("Decoded configuration %v", cfg)
+
+	secretName := cfg.SecretRef
+	secretObj, err := c.client.CoreV1().Secrets(ch.ResourceNamespace).Get(context.Background(), secretName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("Unable to get secret `%s/%s`; %v", secretName, ch.ResourceNamespace, err)
+	}
+	fmt.Printf( "%v", secretObj )
+
 
 	// TODO: add code that sets a record in the DNS provider's console
 	return nil
