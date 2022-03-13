@@ -68,7 +68,7 @@ type customDNSProviderConfig struct {
 
 	//Email           string `json:"email"`
 	SecretRef string `json:"secretName"`
-	Domain string `json:"domain"`
+	Domain    string `json:"domain"`
 	//APIKeySecretRef v1.SecretKeySelector `json:"apiKeySecretRef"`
 }
 
@@ -101,8 +101,11 @@ func (c *customDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 	if err != nil {
 		return fmt.Errorf("Unable to get secret `%s/%s`; %v", secretName, ch.ResourceNamespace, err)
 	}
-	fmt.Printf( "%v", secretObj )
 
+	username := string(secretObj.Data["username"])
+	password := string(secretObj.Data["password"])
+
+	fmt.Printf("Domain: %s, Auth: %s %s", cfg.Domain, username, password)
 
 	// TODO: add code that sets a record in the DNS provider's console
 	return nil
