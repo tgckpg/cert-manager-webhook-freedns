@@ -93,9 +93,6 @@ func (c *customDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 		return err
 	}
 
-	// TODO: do something more useful with the decoded configuration
-	fmt.Printf("Decoded configuration %v", cfg)
-
 	secretName := cfg.SecretRef
 	secretObj, err := c.client.CoreV1().Secrets(ch.ResourceNamespace).Get(context.Background(), secretName, metav1.GetOptions{})
 	if err != nil {
@@ -105,7 +102,7 @@ func (c *customDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 	username := string(secretObj.Data["username"])
 	password := string(secretObj.Data["password"])
 
-	fmt.Printf("Domain: %s, Auth: %s %s", cfg.Domain, username, password)
+	fmt.Printf("Domain: %s, Auth: %s %s\n", cfg.Domain, username, password)
 
 	// TODO: add code that sets a record in the DNS provider's console
 	return nil
