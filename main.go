@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	extapi "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
+	"github.com/cert-manager/webhook-freedns/freedns"
 	"github.com/jetstack/cert-manager/pkg/acme/webhook/apis/acme/v1alpha1"
 	"github.com/jetstack/cert-manager/pkg/acme/webhook/cmd"
 )
@@ -43,7 +45,8 @@ type customDNSProviderSolver struct {
 	// 3. uncomment the relevant code in the Initialize method below
 	// 4. ensure your webhook's service account has the required RBAC role
 	//    assigned to it for interacting with the Kubernetes APIs you need.
-	client *kubernetes.Clientset
+	client  *kubernetes.Clientset
+	freedns *freedns.FreeDNS
 }
 
 // customDNSProviderConfig is a structure that is used to decode into when
@@ -68,7 +71,6 @@ type customDNSProviderConfig struct {
 
 	//Email           string `json:"email"`
 	SecretRef string `json:"secretName"`
-	Domain    string `json:"domain"`
 	//APIKeySecretRef v1.SecretKeySelector `json:"apiKeySecretRef"`
 }
 
@@ -102,9 +104,31 @@ func (c *customDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 	username := string(secretObj.Data["username"])
 	password := string(secretObj.Data["password"])
 
-	fmt.Printf("Domain: %s, Auth: %s %s\n", cfg.Domain, username, password)
+	dnsObj := freedns.FreeDNS{}
+	err = dnsObj.Login(username, password)
+	if err != nil {
+		return err
+	}
 
-	// TODO: add code that sets a record in the DNS provider's console
+	domainName := freedns.GetDomainFromZone(ch.ResolvedZone)
+	err = dnsObj.SelectDomain(domainName)
+	if err != nil {
+		return err
+	}
+
+	_zone := strings.TrimRight(ch.ResolvedFQDN, ".")
+	_zone = strings.TrimSuffix(_zone, domainName)
+	_zone = strings.TrimRight(_zone, ".")
+	_key := "\"" + ch.Key + "\""
+
+	fmt.Println("ADD", _zone, _key)
+
+	err = dnsObj.AddRecord("TXT", _zone, _key, false, "")
+	if err != nil {
+		return err
+	}
+
+	c.freedns = &dnsObj
 	return nil
 }
 
@@ -115,8 +139,21 @@ func (c *customDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 // This is in order to facilitate multiple DNS validations for the same domain
 // concurrently.
 func (c *customDNSProviderSolver) CleanUp(ch *v1alpha1.ChallengeRequest) error {
-	// TODO: add code that deletes a record from the DNS provider's console
-	return nil
+
+	_addr := strings.TrimRight(ch.ResolvedFQDN, ".")
+	_key := "\"" + ch.Key + "\""
+	_id, err := c.freedns.FindRecord(_addr, "TXT", _key)
+
+	fmt.Println("DEL", _addr)
+
+	if _id != "" {
+		err = c.freedns.DeleteRecord(_id)
+		if err != nil {
+			return err
+		}
+	}
+
+	return c.freedns.Logout()
 }
 
 // Initialize will be called when the webhook first starts.

@@ -34,6 +34,12 @@ const URI_DELETE_RECORD = "https://freedns.afraid.org/subdomain/delete2.php?data
 
 // const URI_LOGIN string = "http://127.0.0.1:1234/"
 
+func GetDomainFromZone(Zone string) string {
+	_segs := strings.Split(strings.TrimSuffix(Zone, "."), ".")
+	_segs = _segs[len(_segs)-2:]
+	return strings.Join(_segs, ".")
+}
+
 func _HttpRequest(method string, url string, PostData url.Values, ExCookie *http.Cookie) (*http.Response, string, error) {
 	client := http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -157,7 +163,7 @@ loop:
 					attrKey, attrValue, moreAttr := htmlTokens.TagAttr()
 					_href := string(attrValue)
 					if string(attrKey) == "href" && strings.Contains(_href, "/subdomain/?limit=") {
-						dnsObj.DomainId = strings.TrimLeft(_href, "/subdomain/?limit=")
+						dnsObj.DomainId = strings.TrimPrefix(_href, "/subdomain/?limit=")
 						fmt.Printf("Domain id for \"%s\" is %s\n", DomainName, dnsObj.DomainId)
 						break loop
 					}
@@ -293,7 +299,7 @@ loop:
 					if CurrRecordType == RecordType && CurrRecordAddr == Subdomain {
 						if _Addr == Address {
 							return CurrRecordId, nil
-						} else if strings.HasSuffix(_Addr, "...") && strings.HasPrefix(Address, strings.TrimRight(_Addr, "...")) {
+						} else if strings.HasSuffix(_Addr, "...") && strings.HasPrefix(Address, strings.TrimSuffix(_Addr, "...")) {
 							DeepSearchCandidates = append(DeepSearchCandidates, CurrRecordId)
 						}
 					}
@@ -319,7 +325,7 @@ loop:
 					if string(attrKey) == "href" && strings.Contains(_href, "edit.php?data_id=") {
 						lookForNextTD = 1
 						CurrRecordAddr = ""
-						CurrRecordId = strings.TrimLeft(_href, "edit.php?data_id=")
+						CurrRecordId = strings.TrimPrefix(_href, "edit.php?data_id=")
 						break
 					}
 					if !moreAttr {
