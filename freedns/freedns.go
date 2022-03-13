@@ -15,6 +15,8 @@ type FreeDNSOperations interface {
 	Login()
 	SelectDomain()
 	AddRecord()
+	FindRecord()
+	DeleteRecord()
 }
 
 type FreeDNS struct {
@@ -22,9 +24,13 @@ type FreeDNS struct {
 	DomainId   string
 }
 
-const URI_LOGIN string = "https://freedns.afraid.org/zc.php?step=2"
-const URI_DOMAIN string = "https://freedns.afraid.org/domain/"
-const URI_ADD_RECORD string = "https://freedns.afraid.org/subdomain/save.php?step=2"
+const URI_LOGIN = "https://freedns.afraid.org/zc.php?step=2"
+const URI_DOMAIN = "https://freedns.afraid.org/domain/"
+const URI_ADD_RECORD = "https://freedns.afraid.org/subdomain/save.php?step=2"
+const URI_SUBDOMAIN = "https://freedns.afraid.org/subdomain/?limit="
+const URI_SUBDOMAIN_EDIT = "https://freedns.afraid.org/subdomain/edit.php?data_id="
+const URI_LOGOUT = "https://freedns.afraid.org/logout/"
+const URI_DELETE_RECORD = "https://freedns.afraid.org/subdomain/delete2.php?data_id[]=%s&submit=delete%%20selected"
 
 // const URI_LOGIN string = "http://127.0.0.1:1234/"
 
@@ -96,6 +102,18 @@ func (dnsObj *FreeDNS) Login(Username string, Password string) error {
 	return nil
 }
 
+func (dnsObj *FreeDNS) Logout() error {
+	if dnsObj.AuthCookie == nil {
+		return nil
+	}
+
+	_, _, err := _HttpRequest("GET", URI_DOMAIN, nil, dnsObj.AuthCookie)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (dnsObj *FreeDNS) SelectDomain(DomainName string) error {
 	if dnsObj.AuthCookie == nil {
 		return errors.New("Not logged in")
@@ -115,6 +133,8 @@ func (dnsObj *FreeDNS) SelectDomain(DomainName string) error {
 	inBold := false
 	lookForA := false
 	dnsObj.DomainId = ""
+
+	// Begin search for domain id
 loop:
 	for {
 		tt := htmlTokens.Next()
@@ -126,6 +146,8 @@ loop:
 				fmt.Println("Found " + DomainName + ", looking for domain id")
 				lookForA = true
 			}
+			// The [Manage] anchor is next to the bold tag
+			//    <b>DOMAIN_NAME</b> <a href="">[Manage]</a>
 		case html.StartTagToken:
 			_t, hasAttr := htmlTokens.TagName()
 			tagName := string(_t)
@@ -175,7 +197,7 @@ func (dnsObj *FreeDNS) AddRecord(RecordType string, Subdomain string, Address st
 
 	if resp.StatusCode != 302 {
 
-		// Record already exists, treated as success
+		// Record already exists, treat this as success
 		if strings.Contains(respStr, "already have another already existent") {
 			fmt.Println("Record already exists")
 			return nil
@@ -203,8 +225,125 @@ func (dnsObj *FreeDNS) AddRecord(RecordType string, Subdomain string, Address st
 
 	if strings.Contains(_Location.Path, "/zc.php") {
 		fmt.Println("Error on AddRecord: Cookie expired")
-		return errors.New("Cookie exipired")
+		return errors.New("dns_cookie maybe expired")
 	}
 
 	return nil
+}
+
+func (dnsObj *FreeDNS) DeleteRecord(RecordId string) error {
+	resp, _, err := _HttpRequest("GET", fmt.Sprintf(URI_DELETE_RECORD, RecordId), nil, dnsObj.AuthCookie)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != 302 {
+		return errors.New("Unexpected " + fmt.Sprint(resp.StatusCode) + " from remote while deleting record")
+	}
+
+	_Location, err := resp.Location()
+	if err != nil {
+		return err
+	}
+
+	if strings.HasPrefix(_Location.Path, "/zc.php") {
+		return errors.New("dns_cookie maybe expired")
+	}
+
+	return nil
+}
+
+func (dnsObj *FreeDNS) FindRecord(Subdomain string, RecordType string, Address string) (string, error) {
+	if dnsObj.DomainId == "" {
+		return "", errors.New("No domain selected")
+	}
+
+	resp, respStr, err := _HttpRequest("GET", URI_SUBDOMAIN+dnsObj.DomainId, nil, dnsObj.AuthCookie)
+	if err != nil {
+		return "", err
+	}
+
+	if resp.StatusCode == 302 {
+		return "", errors.New("dns_cookie maybe expired")
+	}
+
+	var DeepSearchCandidates []string
+	CurrRecordId := ""
+	CurrRecordType := ""
+	CurrRecordAddr := ""
+	CurrTagName := ""
+	lookForNextTD := 0
+
+	htmlTokens := html.NewTokenizer(strings.NewReader(respStr))
+loop:
+	for {
+		tt := htmlTokens.Next()
+		switch tt {
+		case html.ErrorToken:
+			break loop
+		case html.TextToken:
+			if CurrTagName == "a" && lookForNextTD == 1 && CurrRecordAddr == "" {
+				CurrRecordAddr = strings.TrimSpace(string(htmlTokens.Text()))
+			} else if CurrTagName == "td" {
+				if lookForNextTD == 1 {
+					CurrRecordType = string(htmlTokens.Text())
+					lookForNextTD = 2
+				} else if lookForNextTD == 2 {
+					_Addr := string(htmlTokens.Text())
+					if CurrRecordType == RecordType && CurrRecordAddr == Subdomain {
+						if _Addr == Address {
+							return CurrRecordId, nil
+						} else if strings.HasSuffix(_Addr, "...") && strings.HasPrefix(Address, strings.TrimRight(_Addr, "...")) {
+							DeepSearchCandidates = append(DeepSearchCandidates, CurrRecordId)
+						}
+					}
+					lookForNextTD = 0
+				}
+			}
+		/** Each record is displayed with the following structure
+		 *   <td bgcolor="#eeeeee">
+		 *       <a href="edit.php?data_id=0000000">
+		 *          [DOMAIN_NAME]
+		 *       </a> (<b><font color="blue">G</font></b>)
+		 *   </td>
+		 *   <td bgcolor="#eeeeee">TXT</td>
+		 *   <td bgcolor="#eeeeee">"google-site-verification=truncated_text...</td>
+		 */
+		case html.StartTagToken:
+			_t, hasAttr := htmlTokens.TagName()
+			CurrTagName = string(_t)
+			if CurrTagName == "a" && hasAttr {
+				for {
+					attrKey, attrValue, moreAttr := htmlTokens.TagAttr()
+					_href := string(attrValue)
+					if string(attrKey) == "href" && strings.Contains(_href, "edit.php?data_id=") {
+						lookForNextTD = 1
+						CurrRecordAddr = ""
+						CurrRecordId = strings.TrimLeft(_href, "edit.php?data_id=")
+						break
+					}
+					if !moreAttr {
+						break
+					}
+				}
+			}
+
+		}
+	}
+
+	// Begin deep search for truncated records
+	htmlAddr := strings.ReplaceAll(html.EscapeString(Address), "&#34;", "&quot;")
+	for _, RecordId := range DeepSearchCandidates {
+		fmt.Println("Searching in " + RecordId)
+		_, respStr, err := _HttpRequest("GET", URI_SUBDOMAIN_EDIT+RecordId, nil, dnsObj.AuthCookie)
+		if err != nil {
+			continue
+		}
+
+		if strings.Contains(respStr, htmlAddr) {
+			return RecordId, nil
+		}
+	}
+
+	return "", errors.New("No such record")
 }
