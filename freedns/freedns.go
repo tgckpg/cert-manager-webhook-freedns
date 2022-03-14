@@ -24,6 +24,7 @@ type FreeDNSOperations interface {
 type FreeDNS struct {
 	AuthCookie *http.Cookie
 	DomainId   string
+	LoggedOut  bool
 }
 
 const URI_LOGIN = "https://freedns.afraid.org/zc.php?step=2"
@@ -73,6 +74,8 @@ func _HttpRequest(method string, url string, PostData url.Values, ExCookie *http
 		return nil, "", err
 	}
 
+	req.Header.Set("User-Agent", "github.com/tgckpg/cert-manager-webhook-freedns (2022.03.15)")
+
 	if ExCookie != nil {
 		req.AddCookie(ExCookie)
 	}
@@ -112,6 +115,7 @@ func (dnsObj *FreeDNS) Login(Username string, Password string) error {
 	for _, cookie := range resp.Cookies() {
 		if cookie.Name == "dns_cookie" {
 			dnsObj.AuthCookie = cookie
+			dnsObj.LoggedOut = false
 		}
 	}
 
@@ -119,7 +123,7 @@ func (dnsObj *FreeDNS) Login(Username string, Password string) error {
 }
 
 func (dnsObj *FreeDNS) Logout() error {
-	if dnsObj.AuthCookie == nil {
+	if dnsObj.LoggedOut {
 		return nil
 	}
 
@@ -128,7 +132,7 @@ func (dnsObj *FreeDNS) Logout() error {
 		return err
 	}
 
-	dnsObj.AuthCookie = nil
+	dnsObj.LoggedOut = true
 	return nil
 }
 

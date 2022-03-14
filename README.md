@@ -1,54 +1,59 @@
-# ACME webhook example
+# Introduction
+First, [RTFM](https://cert-manager.io/docs/configuration/acme/dns01/).
 
-The ACME issuer type supports an optional 'webhook' solver, which can be used
-to implement custom DNS01 challenge solving logic.
+Have you read it? If you haven't go read it. Cuz I'll keep everything short.
 
-This is useful if you need to use cert-manager with a DNS provider that is not
-officially supported in cert-manager core.
+This is a dns01 solver for [FreeDNS](https://freedns.afraid.org/).
 
-## Why not in core?
+Pull requests welcome. I'm completely unfamiliar with golang. I did it by looking at
+other webhook repos and this is the result.
 
-As the project & adoption has grown, there has been an influx of DNS provider
-pull requests to our core codebase. As this number has grown, the test matrix
-has become un-maintainable and so, it's not possible for us to certify that
-providers work to a sufficient level.
-
-By creating this 'interface' between cert-manager and DNS providers, we allow
-users to quickly iterate and test out new integrations, and then packaging
-those up themselves as 'extensions' to cert-manager.
-
-We can also then provide a standardised 'testing framework', or set of
-conformance tests, which allow us to validate the a DNS provider works as
-expected.
-
-## Creating your own webhook
-
-Webhook's themselves are deployed as Kubernetes API services, in order to allow
-administrators to restrict access to webhooks with Kubernetes RBAC.
-
-This is important, as otherwise it'd be possible for anyone with access to your
-webhook to complete ACME challenge validations and obtain certificates.
-
-To make the set up of these webhook's easier, we provide a template repository
-that can be used to get started quickly.
-
-### Creating your own repository
-
-### Running the test suite
-
-All DNS providers **must** run the DNS01 provider conformance testing suite,
-else they will have undetermined behaviour when used with cert-manager.
-
-**It is essential that you configure and run the test suite when creating a
-DNS01 webhook.**
-
-An example Go test file has been provided in [main_test.go](https://github.com/jetstack/cert-manager-webhook-example/blob/master/main_test.go).
-
-You can run the test suite with:
-
+## Install
 ```bash
-$ TEST_ZONE_NAME=example.com. make test
+$ cd deploy
+$ helm show values freedns-webhook > my-values.yaml
+$ edit my-values.yaml
+$ helm install -n cert-manager [INSTALLATION_NAME] freedns-webhook/ -f my-values.yaml
 ```
 
-The example file has a number of areas you must fill in and replace with your
-own options in order for tests to pass.
+## ClusterIssuer for Let's encrypt staging
+```yaml
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    email: myemail@example.com
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: le-staging
+    solvers:
+    - dns01:
+        webhook:
+          groupName: acme.freedns.afraid.org
+          solverName: freedns-solver
+          config:
+            secretName: freedns-auth
+```
+
+## FreeDNS webhook settings
+Normally if you haven't changed anything, the default namespace should be
+`cert-manager`. It should be within the same namespace for the webhook when
+you do `helm install webhook -n cert-manager`.
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: freedns-auth
+  namespace: cert-manager
+data:
+  username: [YOUR_USERNAME_IN_BASE64]
+  password: [YOUR_PASSWORD_IN_BASE64]
+type: Opaque
+```
+
+Additionally, the following names can be customized
+* acme.freedns.afraid.org
+* freedns-auth
