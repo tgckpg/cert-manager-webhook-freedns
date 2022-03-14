@@ -121,7 +121,7 @@ func (c *customDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 	_zone = strings.TrimRight(_zone, ".")
 	_key := "\"" + ch.Key + "\""
 
-	fmt.Println("ADD", _zone, _key)
+	freedns.LogInfo(fmt.Sprintf("ADD %s %s", _zone, _key))
 
 	err = dnsObj.AddRecord("TXT", _zone, _key, false, "")
 	if err != nil {
@@ -140,11 +140,17 @@ func (c *customDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 // concurrently.
 func (c *customDNSProviderSolver) CleanUp(ch *v1alpha1.ChallengeRequest) error {
 
+	if c.freedns.AuthCookie == nil {
+		return nil
+	}
+
+	dnsObj := c.freedns
+
 	_addr := strings.TrimRight(ch.ResolvedFQDN, ".")
 	_key := "\"" + ch.Key + "\""
 	_id, err := c.freedns.FindRecord(_addr, "TXT", _key)
 
-	fmt.Println("DEL", _addr)
+	freedns.LogInfo(fmt.Sprintf("DEL %s %s", _addr, _key))
 
 	if _id != "" {
 		err = c.freedns.DeleteRecord(_id)
@@ -153,7 +159,7 @@ func (c *customDNSProviderSolver) CleanUp(ch *v1alpha1.ChallengeRequest) error {
 		}
 	}
 
-	return c.freedns.Logout()
+	return dnsObj.Logout()
 }
 
 // Initialize will be called when the webhook first starts.

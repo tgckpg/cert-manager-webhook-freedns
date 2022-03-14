@@ -6,8 +6,10 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
+	logf "github.com/jetstack/cert-manager/pkg/logs"
 	"golang.org/x/net/html"
 )
 
@@ -32,7 +34,15 @@ const URI_SUBDOMAIN_EDIT = "https://freedns.afraid.org/subdomain/edit.php?data_i
 const URI_LOGOUT = "https://freedns.afraid.org/logout/"
 const URI_DELETE_RECORD = "https://freedns.afraid.org/subdomain/delete2.php?data_id[]=%s&submit=delete%%20selected"
 
-// const URI_LOGIN string = "http://127.0.0.1:1234/"
+func LogInfo(Mesg string) {
+	// fmt.Println(Mesg)
+	logf.V(logf.InfoLevel).Info(Mesg)
+}
+
+func LogDebug(Mesg string) {
+	// fmt.Println(Mesg)
+	logf.V(logf.DebugLevel).Info(Mesg)
+}
 
 func GetDomainFromZone(Zone string) string {
 	_segs := strings.Split(strings.TrimSuffix(Zone, "."), ".")
@@ -113,10 +123,12 @@ func (dnsObj *FreeDNS) Logout() error {
 		return nil
 	}
 
-	_, _, err := _HttpRequest("GET", URI_DOMAIN, nil, dnsObj.AuthCookie)
+	_, _, err := _HttpRequest("GET", URI_LOGOUT, nil, dnsObj.AuthCookie)
 	if err != nil {
 		return err
 	}
+
+	dnsObj.AuthCookie = nil
 	return nil
 }
 
@@ -149,7 +161,7 @@ loop:
 			break loop
 		case html.TextToken:
 			if inBold && strings.TrimSpace(htmlTokens.Token().Data) == DomainName {
-				fmt.Println("Found " + DomainName + ", looking for domain id")
+				LogInfo("Found " + DomainName + ", looking for domain id")
 				lookForA = true
 			}
 			// The [Manage] anchor is next to the bold tag
@@ -162,9 +174,9 @@ loop:
 				for {
 					attrKey, attrValue, moreAttr := htmlTokens.TagAttr()
 					_href := string(attrValue)
-					if string(attrKey) == "href" && strings.Contains(_href, "/subdomain/?limit=") {
+					if string(attrKey) == "href" && strings.HasPrefix(_href, "/subdomain/?limit=") {
 						dnsObj.DomainId = strings.TrimPrefix(_href, "/subdomain/?limit=")
-						fmt.Printf("Domain id for \"%s\" is %s\n", DomainName, dnsObj.DomainId)
+						LogDebug(fmt.Sprintf("Domain id for \"%s\" is %s\n", DomainName, dnsObj.DomainId))
 						break loop
 					}
 					if !moreAttr {
@@ -205,10 +217,15 @@ func (dnsObj *FreeDNS) AddRecord(RecordType string, Subdomain string, Address st
 
 		// Record already exists, treat this as success
 		if strings.Contains(respStr, "already have another already existent") {
-			fmt.Println("Record already exists")
+			LogInfo("Record already exists")
 			return nil
 		}
 
+		// Try get a sense of the problem
+		var errorMesgs []string
+		lookForNextEl := 0
+		lookForText := false
+		_strBuffer := ""
 		htmlTokens := html.NewTokenizer(strings.NewReader(respStr))
 	loop:
 		for {
@@ -217,8 +234,38 @@ func (dnsObj *FreeDNS) AddRecord(RecordType string, Subdomain string, Address st
 			case html.ErrorToken:
 				break loop
 			case html.TextToken:
+				_text := strings.TrimSpace(string(htmlTokens.Text()))
+				// Search for the "1 error" / "N errors" message
+				if strings.HasSuffix(_text, "error") || strings.HasSuffix(_text, "errors") {
+					_text = strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(_text, "s"), "error"))
+					_n, _ := strconv.ParseInt(_text, 10, 8)
+					// + 1 because we are already inside a font tag
+					// The next closing </font> is ourself
+					lookForNextEl = int(_n) + 1
+				} else if lookForText {
+					_strBuffer = _strBuffer + _text
+				}
+
 			case html.StartTagToken:
+				_t, _ := htmlTokens.TagName()
+				tagName := string(_t)
+				if tagName == "font" && 0 < lookForNextEl {
+					lookForText = true
+					_strBuffer = ""
+				}
+			case html.EndTagToken:
+				_t, _ := htmlTokens.TagName()
+				tagName := string(_t)
+				if tagName == "font" && 0 < lookForNextEl {
+					lookForText = false
+					errorMesgs = append(errorMesgs, strings.TrimSpace(_strBuffer))
+					lookForNextEl--
+				}
 			}
+		}
+
+		if 0 < len(errorMesgs) {
+			return errors.New(strings.Join(errorMesgs, ", "))
 		}
 
 		return errors.New("Unknown error while submitting record")
@@ -229,8 +276,8 @@ func (dnsObj *FreeDNS) AddRecord(RecordType string, Subdomain string, Address st
 		return err
 	}
 
-	if strings.Contains(_Location.Path, "/zc.php") {
-		fmt.Println("Error on AddRecord: Cookie expired")
+	if strings.HasPrefix(_Location.Path, "/zc.php") {
+		LogDebug("Error on AddRecord: Cookie expired")
 		return errors.New("dns_cookie maybe expired")
 	}
 
@@ -278,7 +325,7 @@ func (dnsObj *FreeDNS) FindRecord(Subdomain string, RecordType string, Address s
 	CurrRecordType := ""
 	CurrRecordAddr := ""
 	CurrTagName := ""
-	lookForNextTD := 0
+	lookForNextEl := 0
 
 	htmlTokens := html.NewTokenizer(strings.NewReader(respStr))
 loop:
@@ -288,13 +335,13 @@ loop:
 		case html.ErrorToken:
 			break loop
 		case html.TextToken:
-			if CurrTagName == "a" && lookForNextTD == 1 && CurrRecordAddr == "" {
+			if CurrTagName == "a" && lookForNextEl == 1 && CurrRecordAddr == "" {
 				CurrRecordAddr = strings.TrimSpace(string(htmlTokens.Text()))
 			} else if CurrTagName == "td" {
-				if lookForNextTD == 1 {
+				if lookForNextEl == 1 {
 					CurrRecordType = string(htmlTokens.Text())
-					lookForNextTD = 2
-				} else if lookForNextTD == 2 {
+					lookForNextEl = 2
+				} else if lookForNextEl == 2 {
 					_Addr := string(htmlTokens.Text())
 					if CurrRecordType == RecordType && CurrRecordAddr == Subdomain {
 						if _Addr == Address {
@@ -303,7 +350,7 @@ loop:
 							DeepSearchCandidates = append(DeepSearchCandidates, CurrRecordId)
 						}
 					}
-					lookForNextTD = 0
+					lookForNextEl = 0
 				}
 			}
 		/** Each record is displayed with the following structure
@@ -323,7 +370,7 @@ loop:
 					attrKey, attrValue, moreAttr := htmlTokens.TagAttr()
 					_href := string(attrValue)
 					if string(attrKey) == "href" && strings.Contains(_href, "edit.php?data_id=") {
-						lookForNextTD = 1
+						lookForNextEl = 1
 						CurrRecordAddr = ""
 						CurrRecordId = strings.TrimPrefix(_href, "edit.php?data_id=")
 						break
@@ -340,7 +387,7 @@ loop:
 	// Begin deep search for truncated records
 	htmlAddr := strings.ReplaceAll(html.EscapeString(Address), "&#34;", "&quot;")
 	for _, RecordId := range DeepSearchCandidates {
-		fmt.Println("Searching in " + RecordId)
+		LogDebug("Searching in " + RecordId)
 		_, respStr, err := _HttpRequest("GET", URI_SUBDOMAIN_EDIT+RecordId, nil, dnsObj.AuthCookie)
 		if err != nil {
 			continue
