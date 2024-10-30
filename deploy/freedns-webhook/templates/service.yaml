@@ -2,6 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "freedns-webhook.fullname" . }}
+  namespace: {{ .Release.Namespace | quote }}
   labels:
     app: {{ include "freedns-webhook.name" . }}
     chart: {{ include "freedns-webhook.chart" . }}

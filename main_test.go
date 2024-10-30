@@ -4,11 +4,11 @@ import (
 	"os"
 	"testing"
 
-	"github.com/jetstack/cert-manager/test/acme/dns"
+	acmetest "github.com/cert-manager/cert-manager/test/acme"
 )
 
 var (
-	zone = os.Getenv("TEST_ZONE_NAME")
+	zone = os.Getenv("FREEDNS_DOMAIN")
 )
 
 func TestRunsSuite(t *testing.T) {
@@ -17,12 +17,11 @@ func TestRunsSuite(t *testing.T) {
 	// ChallengeRequest passed as part of the test cases.
 	//
 
-	// Uncomment the below fixture when implementing your custom DNS provider
-	fixture := dns.NewFixture(&customDNSProviderSolver{},
-		dns.SetResolvedZone(zone),
-		dns.SetAllowAmbientCredentials(false),
-		dns.SetManifestPath("testdata/freedns-solver"),
+	fixture := acmetest.NewFixture(&customDNSProviderSolver{},
+		acmetest.SetResolvedZone(zone),
+		acmetest.SetManifestPath("testdata/freedns-solver"),
+		acmetest.SetUseAuthoritative(false),
 	)
-	fixture.RunConformance(t)
-
+	fixture.RunBasic(t)
+	fixture.RunExtended(t)
 }
