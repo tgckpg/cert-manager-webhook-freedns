@@ -12,6 +12,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
+	logf "github.com/cert-manager/cert-manager/pkg/logs"
 	"github.com/cert-manager/webhook-freedns/freedns"
 	"github.com/cert-manager/cert-manager/pkg/acme/webhook/apis/acme/v1alpha1"
 	"github.com/cert-manager/cert-manager/pkg/acme/webhook/cmd"
@@ -121,8 +122,6 @@ func (c *customDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 	_zone = strings.TrimRight(_zone, ".")
 	_key := "\"" + ch.Key + "\""
 
-	freedns.LogInfo(fmt.Sprintf("ADD %s %s", _zone, _key))
-
 	err = dnsObj.AddRecord("TXT", _zone, _key, false, "")
 	if err != nil {
 		return err
@@ -150,7 +149,7 @@ func (c *customDNSProviderSolver) CleanUp(ch *v1alpha1.ChallengeRequest) error {
 	_key := "\"" + ch.Key + "\""
 	_id, err := c.freedns.FindRecord(_addr, "TXT", _key)
 
-	freedns.LogInfo(fmt.Sprintf("DEL %s %s", _addr, _key))
+	logf.V(logf.InfoLevel).Info(fmt.Sprintf("(id=%s) TXT Record: %s %s", _id, _addr, _key))
 
 	if _id != "" {
 		err = c.freedns.DeleteRecord(_id)

@@ -35,16 +35,6 @@ const URI_SUBDOMAIN_EDIT = "https://freedns.afraid.org/subdomain/edit.php?data_i
 const URI_LOGOUT = "https://freedns.afraid.org/logout/"
 const URI_DELETE_RECORD = "https://freedns.afraid.org/subdomain/delete2.php?data_id[]=%s&submit=delete%%20selected"
 
-func LogInfo(Mesg string) {
-	//fmt.Println(Mesg)
-	logf.V(logf.InfoLevel).Info(Mesg)
-}
-
-func LogDebug(Mesg string) {
-	//fmt.Println(Mesg)
-	logf.V(logf.DebugLevel).Info(Mesg)
-}
-
 func GetDomainFromZone(Zone string) string {
 	_segs := strings.Split(strings.TrimSuffix(Zone, "."), ".")
 	_segs = _segs[len(_segs)-2:]
@@ -165,7 +155,7 @@ loop:
 			break loop
 		case html.TextToken:
 			if inBold && strings.TrimSpace(htmlTokens.Token().Data) == DomainName {
-				LogInfo("Found " + DomainName + ", looking for domain id")
+				logf.V(logf.InfoLevel).Info(fmt.Sprintf("Found HTMLTextNode that contains \"%s\", try looking for domain id", DomainName))
 				lookForA = true
 			}
 			// The [Manage] anchor is next to the bold tag
@@ -180,7 +170,7 @@ loop:
 					_href := string(attrValue)
 					if string(attrKey) == "href" && strings.HasPrefix(_href, "/subdomain/?limit=") {
 						dnsObj.DomainId = strings.TrimPrefix(_href, "/subdomain/?limit=")
-						LogDebug(fmt.Sprintf("Domain id for \"%s\" is %s\n", DomainName, dnsObj.DomainId))
+						logf.V(logf.InfoLevel).Info(fmt.Sprintf("Domain id for \"%s\" is %s", DomainName, dnsObj.DomainId))
 						break loop
 					}
 					if !moreAttr {
@@ -202,6 +192,9 @@ func (dnsObj *FreeDNS) AddRecord(RecordType string, Subdomain string, Address st
 	if dnsObj.DomainId == "" {
 		return errors.New("No domain selected")
 	}
+
+	logf.V(logf.InfoLevel).Info(fmt.Sprintf("Adding %s Record: %s %s", RecordType, Subdomain, Address))
+
 	recordData := url.Values{}
 	recordData.Set("type", RecordType)
 	recordData.Set("domain_id", dnsObj.DomainId)
@@ -221,7 +214,7 @@ func (dnsObj *FreeDNS) AddRecord(RecordType string, Subdomain string, Address st
 
 		// Record already exists, treat this as success
 		if strings.Contains(respStr, "already have another already existent") {
-			LogInfo("Record already exists")
+			logf.V(logf.InfoLevel).Info("Record already exists")
 			return nil
 		}
 
@@ -281,7 +274,7 @@ func (dnsObj *FreeDNS) AddRecord(RecordType string, Subdomain string, Address st
 	}
 
 	if strings.HasPrefix(_Location.Path, "/zc.php") {
-		LogDebug("Error on AddRecord: Cookie expired")
+		logf.V(logf.DebugLevel).Info("Error on AddRecord: Cookie expired")
 		return errors.New("dns_cookie maybe expired")
 	}
 
@@ -289,6 +282,9 @@ func (dnsObj *FreeDNS) AddRecord(RecordType string, Subdomain string, Address st
 }
 
 func (dnsObj *FreeDNS) DeleteRecord(RecordId string) error {
+
+	logf.V(logf.InfoLevel).Info(fmt.Sprintf("(id=%s) Removing Record", RecordId))
+
 	resp, _, err := _HttpRequest("GET", fmt.Sprintf(URI_DELETE_RECORD, RecordId), nil, dnsObj.AuthCookie)
 	if err != nil {
 		return err
@@ -391,7 +387,7 @@ loop:
 	// Begin deep search for truncated records
 	htmlAddr := strings.ReplaceAll(html.EscapeString(Address), "&#34;", "&quot;")
 	for _, RecordId := range DeepSearchCandidates {
-		LogDebug("Searching in " + RecordId)
+		logf.V(logf.DebugLevel).Info("Searching in " + RecordId)
 		_, respStr, err := _HttpRequest("GET", URI_SUBDOMAIN_EDIT+RecordId, nil, dnsObj.AuthCookie)
 		if err != nil {
 			continue
