@@ -8,45 +8,6 @@ metadata:
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: {{ include "freedns-webhook.fullname" . }}:secret-read
-  namespace: {{ .Release.Namespace }}
-  labels:
-    app: {{ include "freedns-webhook.name" . }}
-    chart: {{ include "freedns-webhook.chart" . }}
-    release: {{ .Release.Name }}
-    heritage: {{ .Release.Service }}
-rules:
-  - apiGroups:
-      - ''
-    resources:
-      - 'secrets'
-    verbs:
-      - 'get'
----
-# Grant the webhook permission to read the secret
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: {{ include "freedns-webhook.fullname" . }}:secret-read
-  namespace: {{ .Release.Namespace }}
-  labels:
-    app: {{ include "freedns-webhook.name" . }}
-    chart: {{ include "freedns-webhook.chart" . }}
-    release: {{ .Release.Name }}
-    heritage: {{ .Release.Service }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: {{ include "freedns-webhook.fullname" . }}:secret-read
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: {{ include "freedns-webhook.fullname" . }}
-    namespace: {{ .Release.Namespace }}
----
 # Grant the webhook permission to read the ConfigMap containing the Kubernetes
 # apiserver's requestheader-ca-certificate.
 # This ConfigMap is automatically created by the Kubernetes apiserver.

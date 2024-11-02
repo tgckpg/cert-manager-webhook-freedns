@@ -14,7 +14,7 @@ certManager:
 
 image:
   repository: penguinade/cert-manager-webhook-freedns
-  tag: 2024.11.02.04
+  tag: 2024.11.02.05
   pullPolicy: IfNotPresent
 
 nameOverride: ""
@@ -23,6 +23,11 @@ fullnameOverride: ""
 service:
   type: ClusterIP
   port: 443
+
+freedns:
+  auth:
+    FREEDNS_USERNAME:
+    FREEDNS_PASSWORD:
 
 resources: {}
   # We usually recommend not to specify default resources and to leave this as a conscious

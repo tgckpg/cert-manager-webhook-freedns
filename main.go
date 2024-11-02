@@ -1,14 +1,12 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
 	extapi "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
@@ -19,10 +17,18 @@ import (
 )
 
 var GroupName = os.Getenv("GROUP_NAME")
+var UserName = os.Getenv("FREEDNS_USERNAME")
+var Password = os.Getenv("FREEDNS_PASSWORD")
 
 func main() {
 	if GroupName == "" {
 		panic("GROUP_NAME must be specified")
+	}
+	if UserName == "" {
+		panic("FREEDNS_USERNAME must be specified")
+	}
+	if Password == "" {
+		panic("FREEDNS_PASSWORD must be specified")
 	}
 
 	// This will register our custom DNS provider with the webhook serving
@@ -91,22 +97,8 @@ func (c *customDNSProviderSolver) Name() string {
 // cert-manager itself will later perform a self check to ensure that the
 // solver has correctly configured the DNS provider.
 func (c *customDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
-	cfg, err := loadConfig(ch.Config)
-	if err != nil {
-		return err
-	}
-
-	secretName := cfg.SecretRef
-	secretObj, err := c.client.CoreV1().Secrets(ch.ResourceNamespace).Get(context.Background(), secretName, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("Unable to get secret `%s/%s`; %v", secretName, ch.ResourceNamespace, err)
-	}
-
-	username := string(secretObj.Data["username"])
-	password := string(secretObj.Data["password"])
-
 	dnsObj := freedns.FreeDNS{}
-	err = dnsObj.Login(username, password)
+	err := dnsObj.Login(UserName, Password)
 	if err != nil {
 		return err
 	}

@@ -29,6 +29,9 @@ spec:
             - --v=2
             - --tls-cert-file=/tls/tls.crt
             - --tls-private-key-file=/tls/tls.key
+          envFrom:
+            - secretRef:
+                name: {{ include "freedns-webhook.fullname" . }}-auth
           env:
             - name: GROUP_NAME
               value: {{ .Values.groupName | quote }}
